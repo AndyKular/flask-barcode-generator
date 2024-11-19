@@ -4,7 +4,6 @@ import tempfile
 import pandas as pd
 import barcode
 from barcode.writer import ImageWriter
-from PIL import Image, ImageDraw, ImageFont
 from fpdf import FPDF
 from werkzeug.utils import secure_filename
 import shutil
@@ -36,30 +35,26 @@ def upload_file():
 
 @app.route('/generate', methods=['POST'])
 def generate():
+    temp_dir = None
     try:
-        # Check if a file was uploaded
+        # Validate file upload
         if 'file' not in request.files:
             return "Error: No file uploaded.", 400
 
         file = request.files['file']
         if file.filename == '':
             return "Error: No file selected.", 400
+        if not file.filename.endswith('.xlsx'):
+            return "Error: Only .xlsx files are supported.", 400
 
-        # Check file size (Render 4MB limit)
-        if file.content_length > 4 * 1024 * 1024:
-            return "Error: File size exceeds 4MB limit.", 400
-
-        # Save the uploaded file
+        # Create a temporary directory for processing
         temp_dir = tempfile.mkdtemp()
-        os.makedirs(temp_dir, exist_ok=True)
-        print(f"Temporary directory created at: {temp_dir}")
-
         file_path = os.path.join(temp_dir, secure_filename(file.filename))
         file.save(file_path)
 
-        # Read and process the Excel file
+        # Read and process the Excel file using openpyxl
         try:
-            df = pd.read_excel(file_path, sheet_name=0, skiprows=10)
+            df = pd.read_excel(file_path, sheet_name=0, skiprows=10, engine="openpyxl")
             if "Unnamed: 13" not in df.columns:
                 return "Error: 'Unnamed: 13' column not found in the uploaded file.", 400
             df = df[["Unnamed: 13"]].dropna()
@@ -70,7 +65,6 @@ def generate():
         # Process and filter UPC codes
         upc_codes = df['UPC'].apply(sanitize_upc).apply(pad_upc)
         upc_codes = upc_codes[upc_codes != '000000000000']
-        print("Processed UPC Codes:", upc_codes.tolist())
 
         # Generate barcodes and add to PDF
         pdf = FPDF()
@@ -80,15 +74,12 @@ def generate():
 
         for i, upc in enumerate(upc_codes):
             if not upc or upc == '000000000000':
-                print(f"Skipping invalid UPC: {upc}")
                 continue
-
             try:
                 barcode_class = barcode.get_barcode_class('upca' if len(upc) == 12 else 'ean13')
                 upc_barcode = barcode_class(upc, writer=ImageWriter())
                 barcode_path = os.path.join(temp_dir, f"{upc}.png")
                 upc_barcode.save(barcode_path.split('.png')[0])
-                print(f"Barcode saved for {upc} at {barcode_path}")
 
                 # Add barcode to PDF
                 if i % (images_per_row * images_per_col) == 0:
@@ -103,17 +94,17 @@ def generate():
         # Save the PDF
         pdf_path = os.path.join(temp_dir, "barcodes.pdf")
         pdf.output(pdf_path)
-        print(f"PDF successfully saved at: {pdf_path}")
 
         return send_file(pdf_path, as_attachment=True, download_name="barcodes.pdf")
     except Exception as e:
-        print(f"Error during processing: {str(e)}")
+        print(f"Server Error: {str(e)}")
         return f"Error: {str(e)}", 500
     finally:
         # Clean up temporary files
-        shutil.rmtree(temp_dir)
+        if temp_dir:
+            shutil.rmtree(temp_dir)
 
-# Run the app with the correct port for Render
+# Run the app
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
