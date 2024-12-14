@@ -7,9 +7,8 @@ from barcode.writer import ImageWriter
 from fpdf import FPDF
 from werkzeug.utils import secure_filename
 import shutil
-from vercel_python_wsgi import handle_wsgi
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 
 # Function to sanitize UPC codes
 def sanitize_upc(upc):
@@ -106,8 +105,3 @@ def generate():
     finally:
         if temp_dir:
             shutil.rmtree(temp_dir)
-
-# The handler function for Vercel
-def handler(event, context):
-    return handle_wsgi(event, context, app)
-
