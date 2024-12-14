@@ -7,6 +7,7 @@ from barcode.writer import ImageWriter
 from fpdf import FPDF
 from werkzeug.utils import secure_filename
 import shutil
+from vercel_python_wsgi import handle_wsgi
 
 app = Flask(__name__)
 
@@ -31,6 +32,7 @@ def pad_upc(upc):
 
 @app.route('/')
 def upload_file():
+    # Make sure 'templates/upload.html' exists
     return render_template('upload.html')
 
 @app.route('/generate', methods=['POST'])
@@ -85,7 +87,8 @@ def generate():
                 if i % (images_per_row * images_per_col) == 0:
                     pdf.add_page()
                 row, col = divmod(i % (images_per_row * images_per_col), images_per_row)
-                x, y = margin + col * (image_width + margin), margin + row * (image_height + margin)
+                x = margin + col * (image_width + margin)
+                y = margin + row * (image_height + margin)
                 pdf.image(barcode_path, x, y, w=image_width, h=image_height)
             except Exception as e:
                 print(f"Error generating barcode for {upc}: {str(e)}")
@@ -104,7 +107,6 @@ def generate():
         if temp_dir:
             shutil.rmtree(temp_dir)
 
-# Run the app
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+# This function is the entrypoint for the serverless function.
+def handler(event, context):
+    return handle_wsgi(event, context, app)
